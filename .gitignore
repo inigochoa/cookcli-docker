@@ -1,0 +1,61 @@
+# Test directories
+test-recipes/
+test/
+tests/
+
+# Docker
+*.log
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# Editors
+.vscode/
+.idea/
+*.iml
+
+# Temporary files
+*.tmp
+*.bak
+*.cache
+.temp/
+tmp/
+
+# Environment files (if you add any in the future)
+.env
+.env.local
+.env.*.local
+
+# Build artifacts (if you add any scripts that generate files)
+dist/
+build/
+*.tar.gz
+*.zip
+
+# Logs
+*.log
+logs/
+
+# Version files (keep only the final versions in repo)
+*.v[0-9]
+*.v[0-9][0-9]
+**/**.v[0-9].md
+**/**.v[0-9].sh
+**/**.v[0-9].yml
+**/**.v[0-9].yaml
