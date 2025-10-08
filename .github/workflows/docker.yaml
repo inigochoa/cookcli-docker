@@ -13,6 +13,11 @@ on:
         required: false
         type: string
 
+# Required permissions for creating releases
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   check-version:
     runs-on: ubuntu-latest
@@ -108,12 +113,10 @@ jobs:
 
       - name: Create GitHub Release
         if: success()
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ steps.tags.outputs.version }}
-          release_name: CookCLI ${{ steps.tags.outputs.version }}
+          name: CookCLI ${{ steps.tags.outputs.version }}
           body: |
             Docker image for CookCLI version ${{ steps.tags.outputs.version }}
 
