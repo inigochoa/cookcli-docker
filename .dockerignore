@@ -1,0 +1,51 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# CI/CD
+.github
+
+# Documentation
+*.md
+LICENSE.md
+CHANGELOG.md
+
+# Build scripts
+build.sh
+
+# Docker
+compose.yaml
+.dockerignore
+Dockerfile
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files
+test/
+tests/
+test-recipes/
+
+# Temporary files
+*.tmp
+*.log
+*.bak
+
+# Node (if you ever add tooling)
+node_modules/
+package-lock.json
+
+# Python (if you ever add tooling)
+__pycache__/
+*.pyc
+.venv/
+venv/
