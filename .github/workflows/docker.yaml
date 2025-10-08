@@ -1,0 +1,166 @@
+name: Build and Publish Docker Image
+
+on:
+  # Daily check for new CookCLI releases
+  schedule:
+    - cron: '0 2 * * *'  # Run at 2 AM UTC daily
+
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'CookCLI version to build (leave empty for latest)'
+        required: false
+        type: string
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get-version.outputs.version }}
+      should-build: ${{ steps.check-build.outputs.should-build }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get latest CookCLI version
+        id: get-version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            echo "Using manually specified version: ${VERSION}"
+          else
+            VERSION=$(curl -s https://api.github.com/repos/cooklang/cookcli/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+            echo "Latest CookCLI version: ${VERSION}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Check if build is needed
+        id: check-build
+        run: |
+          VERSION="${{ steps.get-version.outputs.version }}"
+
+          # Check if this version already exists in Docker Hub
+          if docker manifest inspect inigochoa/cookcli:${VERSION} > /dev/null 2>&1; then
+            echo "Version ${VERSION} already exists in Docker Hub"
+            echo "should-build=false" >> $GITHUB_OUTPUT
+          else
+            echo "Version ${VERSION} does not exist, building..."
+            echo "should-build=true" >> $GITHUB_OUTPUT
+          fi
+
+  build-and-push:
+    needs: check-version
+    if: needs.check-version.outputs.should-build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract version tags
+        id: tags
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          MAJOR=$(echo ${VERSION} | cut -d. -f1)
+          MINOR=$(echo ${VERSION} | cut -d. -f1-2)
+
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "major=${MAJOR}" >> $GITHUB_OUTPUT
+          echo "minor=${MINOR}" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            VERSION=${{ needs.check-version.outputs.version }}
+          tags: |
+            inigochoa/cookcli:latest
+            inigochoa/cookcli:${{ steps.tags.outputs.version }}
+            inigochoa/cookcli:${{ steps.tags.outputs.minor }}
+            inigochoa/cookcli:${{ steps.tags.outputs.major }}
+          labels: |
+            org.opencontainers.image.title=CookCLI
+            org.opencontainers.image.description=Docker image for CookCLI - CLI tool for managing Cooklang recipes
+            org.opencontainers.image.url=https://github.com/inigochoa/cookcli-docker
+            org.opencontainers.image.source=https://github.com/inigochoa/cookcli-docker
+            org.opencontainers.image.version=${{ steps.tags.outputs.version }}
+            org.opencontainers.image.created=${{ github.event.repository.updated_at }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=MIT
+          cache-from: type=registry,ref=inigochoa/cookcli:buildcache
+          cache-to: type=registry,ref=inigochoa/cookcli:buildcache,mode=max
+
+      - name: Create GitHub Release
+        if: success()
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.tags.outputs.version }}
+          release_name: CookCLI ${{ steps.tags.outputs.version }}
+          body: |
+            Docker image for CookCLI version ${{ steps.tags.outputs.version }}
+
+            ## Images
+            - `inigochoa/cookcli:${{ steps.tags.outputs.version }}`
+            - `inigochoa/cookcli:${{ steps.tags.outputs.minor }}`
+            - `inigochoa/cookcli:${{ steps.tags.outputs.major }}`
+            - `inigochoa/cookcli:latest`
+
+            ## Platforms
+            - linux/amd64
+            - linux/arm64
+
+            ## Changes
+            Updated to CookCLI version ${{ steps.tags.outputs.version }}
+
+            See [CookCLI release notes](https://github.com/cooklang/cookcli/releases/tag/v${{ steps.tags.outputs.version }}) for details.
+          draft: false
+          prerelease: false
+
+      - name: Update Docker Hub description
+        uses: peter-evans/dockerhub-description@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: inigochoa/cookcli
+          readme-filepath: ./README.md
+
+  notify:
+    needs: [check-version, build-and-push]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "**Version**: ${{ needs.check-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Should Build**: ${{ needs.check-version.outputs.should-build }}" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.check-version.outputs.should-build }}" == "true" ]; then
+            if [ "${{ needs.build-and-push.result }}" == "success" ]; then
+              echo "**Status**: ✅ Build and push successful" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "Image available at: https://hub.docker.com/r/inigochoa/cookcli" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "**Status**: ❌ Build failed" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "**Status**: ⏭️ Skipped (version already exists)" >> $GITHUB_STEP_SUMMARY
+          fi
